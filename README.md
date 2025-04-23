@@ -1,227 +1,328 @@
-# Cache: DevOps Engineer Assessment
+# Cache: DevOps Engineer Take-Home Assessment
 
-This repository contains a secure, production-grade infrastructure setup on Google Cloud Platform (GCP) for a simple application that integrates with Pub/Sub, PostgreSQL, and ELK Stack, with CI/CD support via GitHub.
+This repository contains a secure, production-grade infrastructure setup on Google Cloud Platform (GCP) for deploying a Python Flask application that integrates with Pub/Sub, PostgreSQL, and ELK Stack, with CI/CD support.
 
-## Architecture Overview
+## Architecture
 
-The infrastructure follows industry best practices and SOC 2 compliance requirements:
+The infrastructure follows industry best practices and SOC 2 compliance requirements with separate staging and production environments:
 
-- **VPC Network**: Isolated network with separate subnets for staging and production
-- **GKE Cluster**: Kubernetes cluster with separate staging and production namespaces
-- **PostgreSQL**: Cloud SQL instance with private access
-- **Pub/Sub**: Topic and subscription for asynchronous messaging
-- **ELK Stack**: Elasticsearch, Logstash, and Kibana for log aggregation and analysis
-- **CI/CD**: GitHub Actions and/or Cloud Build for automated deployments
-- **Secret Management**: Google Secret Manager for secure credential storage
-- **Access Control**: Least privilege principle for IAM roles
-- **Bastion Host**: For secure access to the cluster, simulating VPN access
+- **Networking**: VPC with separate subnets for staging and production
+- **Compute**: GKE cluster with environment namespaces and appropriate node configurations
+- **Database**: Cloud SQL PostgreSQL with private networking
+- **Messaging**: Pub/Sub topics and subscriptions
+- **Logging**: ELK Stack (Elasticsearch, Logstash, Kibana)
+- **Security**: Secret Manager, IAM with least privilege, Workload Identity
+- **CI/CD**: GitHub Actions and Cloud Build pipelines
 
-![Architecture Diagram](docs/architecture-diagram.png)
-
-## Application
-
-The application is a simple Python Flask API that provides:
-
-- `/health` endpoint for health checks
-- Integration with PostgreSQL for data persistence
-- Integration with Pub/Sub for message publishing
-- Logging to ELK stack for observability
-- Auto-scaling support in Kubernetes
-
-## Project Structure
+### Architecture Diagram
 
 ```
++---------------------------------------------------------------------+
+|                          Google Cloud Platform                       |
+|                                                                      |
+|  +----------------------+        +-----------------------------+     |
+|  |    VPC Network       |        |      Secret Manager         |     |
+|  |                      |        |  (DB, PubSub credentials)   |     |
+|  +----------------------+        +-----------------------------+     |
+|         |                                     |                      |
+|         v                                     |                      |
+|  +------------------------------------------------------+            |
+|  |                                                      |            |
+|  |  +-------------+            +-------------+          |            |
+|  |  | Production  |            |  Staging    |          |            |
+|  |  |  Subnet     |            |  Subnet     |          |            |
+|  |  +-------------+            +-------------+          |            |
+|  |        |                          |                  |            |
+|  |        v                          v                  |            |
+|  |  +---------------------------------------------+     |            |
+|  |  |               GKE Cluster                   |     |            |
+|  |  |                                             |     |            |
+|  |  |  +------------+        +------------+       |<----+            |
+|  |  |  | Production |        | Staging    |       |                  |
+|  |  |  | Namespace  |        | Namespace  |       |                  |
+|  |  |  +------------+        +------------+       |                  |
+|  |  |        |                    |               |                  |
+|  |  +--------|--------------------|---------------+                  |
+|  |           |                    |                                  |
+|  +-----------|--------------------|----------------------------------+
+|              |                    |                                  |
+|              v                    v                                  |
+|  +----------------+  +----------------+  +------------------------+  |
+|  |   Cloud SQL    |  |    Pub/Sub     |  |       ELK Stack        |  |
+|  | (PostgreSQL)   |  |                |  | (Logs & Monitoring)    |  |
+|  +----------------+  +----------------+  +------------------------+  |
+|                                                                      |
++----------------------------------------------------------------------+
+        |                                              ^
+        |                                              |
+        v                                              |
++------------------+                     +------------------------+
+| GitHub Repository|-------------------->|     CI/CD Pipeline     |
+|                  |                     | (GitHub Actions or     |
+|                  |                     |    Cloud Build)        |
++------------------+                     +------------------------+
+```
+
+## Repository Structure
+
+```
+cache-devops-assessment/
 ├── .github/
 │   └── workflows/
-│       └── ci-cd.yml        # GitHub Actions workflow
+│       └── ci-cd.yml            # GitHub Actions workflow
+│
 ├── terraform/
-│   ├── main.tf              # Main Terraform configuration
-│   ├── variables.tf         # Terraform variables
-│   ├── elk.tf               # ELK stack setup
-│   └── kubernetes.tf        # Kubernetes resources
+│   ├── modules/                 # Reusable Terraform modules
+│   │   ├── apis/                # API enablement
+│   │   ├── networking/          # VPC, subnets, firewalls
+│   │   ├── kubernetes/          # GKE cluster configuration
+│   │   ├── database/            # PostgreSQL configuration
+│   │   ├── messaging/           # Pub/Sub configuration
+│   │   └── logging/             # ELK stack deployment
+│   │
+│   ├── environments/            # Environment-specific configurations
+│   │   ├── staging/             # Staging environment
+│   │   │   ├── main.tf          # Main configuration
+│   │   │   ├── variables.tf     # Variables
+│   │   │   ├── outputs.tf       # Outputs
+│   │   │   ├── secrets.tf       # Secret management
+│   │   │   ├── kubernetes.tf    # Kubernetes resources
+│   │   │   └── terraform.tfvars.example  # Example variables
+│   │   │
+│   │   └── production/          # Production environment
+│   │       ├── main.tf
+│   │       ├── variables.tf
+│   │       ├── outputs.tf
+│   │       ├── secrets.tf
+│   │       ├── kubernetes.tf
+│   │       └── terraform.tfvars.example
+│
 ├── app/
-│   ├── app.py               # Application code
-│   ├── requirements.txt     # Python dependencies
-│   └── Dockerfile           # Docker build instructions
-├── cloudbuild.yaml          # Cloud Build configuration
-├── README.md                # This file
-└── infra-docs.md            # Documentation on IAM, secrets, audit, SOC 2
+│   ├── app.py                   # Flask application
+│   ├── test_app.py              # Unit tests
+│   ├── Dockerfile               # Container configuration
+│
+│
+├── cloudbuild.yaml              # Cloud Build configuration
+├── README.md                    # This file
+└── infra-docs.md                # Infrastructure documentation
+└── requirements.txt             # Python dependencies
 ```
+
+## Prerequisites
+
+- [Google Cloud SDK](https://cloud.google.com/sdk/docs/install) (v350.0.0+)
+- [Terraform](https://www.terraform.io/downloads.html) (v1.0.0+)
+- [kubectl](https://kubernetes.io/docs/tasks/tools/) (v1.20.0+)
+- [Python](https://www.python.org/downloads/) (v3.9+)
+- [Docker](https://docs.docker.com/get-docker/) (v20.10.0+)
+- GCP Account with Owner or Editor permissions
 
 ## Setup Instructions
 
-### Prerequisites
+### 1. Clone the Repository
 
-- [Google Cloud SDK](https://cloud.google.com/sdk/docs/install)
-- [Terraform](https://www.terraform.io/downloads.html) (v1.0.0+)
-- [kubectl](https://kubernetes.io/docs/tasks/tools/)
-- [Python](https://www.python.org/) (v3.9+)
-- GCP Account with Owner or Editor permissions
+```bash
+git clone https://github.com/your-org/cache-devops-assessment.git
+cd cache-devops-assessment
+```
 
-### Setup Steps
+### 2. GCP Project Configuration
 
-1. **Clone the repository**
+```bash
+# Login to Google Cloud
+gcloud auth login
 
-   ```bash
-   git clone https://github.com/your-org/cache-devops-assessment.git
-   cd cache-devops-assessment
-   ```
+# Create a new project (optional)
+gcloud projects create YOUR_PROJECT_ID --name="Cache DevOps Assessment"
 
-2. **Set up Google Cloud Configuration**
+# Set the project ID
+gcloud config set project YOUR_PROJECT_ID
 
-   ```bash
-   # Login to Google Cloud
-   gcloud auth login
+# Enable billing for the project (required for resource creation)
+gcloud billing projects link YOUR_PROJECT_ID --billing-account=YOUR_BILLING_ACCOUNT_ID
+```
 
-   # Set the project ID
-   gcloud config set project YOUR_PROJECT_ID
+### 3. Enable Required APIs
 
-   # Enable required APIs
-   gcloud services enable compute.googleapis.com \
-       container.googleapis.com \
-       servicenetworking.googleapis.com \
-       sqladmin.googleapis.com \
-       secretmanager.googleapis.com \
-       pubsub.googleapis.com \
-       cloudbuild.googleapis.com
-   ```
+```bash
+gcloud services enable compute.googleapis.com \
+    container.googleapis.com \
+    servicenetworking.googleapis.com \
+    sqladmin.googleapis.com \
+    secretmanager.googleapis.com \
+    pubsub.googleapis.com \
+    cloudbuild.googleapis.com \
+    logging.googleapis.com \
+    monitoring.googleapis.com \
+    cloudresourcemanager.googleapis.com
+```
 
-3. **Initialize Terraform and Apply Configuration**
+### 4. Create Artifact Registry Repository
 
-   ```bash
-   cd terraform
+```bash
+gcloud artifacts repositories create app-registry \
+    --repository-format=docker \
+    --location=us-central1 \
+    --description="Docker repository for app images"
+```
 
-   # Initialize Terraform
-   terraform init
+### 5. Build and Push the Application
 
-   # Create a terraform.tfvars file with your configuration
-   cat > terraform.tfvars << EOF
-   project_id           = "YOUR_PROJECT_ID"
-   region               = "us-central1"
-   zone                 = "us-central1-a"
-   project_prefix       = "cache"
-   db_password          = "YOUR_SECURE_PASSWORD"
-   bastion_allowed_cidr = "YOUR_IP_ADDRESS/32"
-   EOF
+```bash
+# Configure Docker for Artifact Registry
+gcloud auth configure-docker us-central1-docker.pkg.dev
 
-   # Plan Terraform changes
-   terraform plan -out=tfplan
+# Build the container image
+docker build -t us-central1-docker.pkg.dev/YOUR_PROJECT_ID/app-registry/app:latest app/
 
-   # Apply Terraform changes
-   terraform apply tfplan
-   ```
+# Push the image to Artifact Registry
+docker push us-central1-docker.pkg.dev/YOUR_PROJECT_ID/app-registry/app:latest
 
-4. **Configure kubectl to connect to the GKE cluster**
+# Tag the image for staging
+docker tag us-central1-docker.pkg.dev/YOUR_PROJECT_ID/app-registry/app:latest \
+    us-central1-docker.pkg.dev/YOUR_PROJECT_ID/app-registry/app:staging
 
-   ```bash
-   gcloud container clusters get-credentials cache-gke-cluster --zone us-central1 --project YOUR_PROJECT_ID
-   ```
+# Push the staging tag
+docker push us-central1-docker.pkg.dev/YOUR_PROJECT_ID/app-registry/app:staging
+```
 
-5. **Create an Artifact Registry repository**
+### 6. Initialize and Apply Terraform for Staging Environment
 
-   ```bash
-   gcloud artifacts repositories create app-registry \
-       --repository-format=docker \
-       --location=us-central1 \
-       --description="Docker repository for app images"
-   ```
+```bash
+cd terraform/environments/staging
 
-6. **Build and push the application**
+# Create terraform.tfvars file from example
+cp terraform.tfvars.example terraform.tfvars
 
-   ```bash
-   cd ../app
+# Edit terraform.tfvars with your project-specific values
+# Do NOT include sensitive values in this file
+vi terraform.tfvars
 
-   # Build the Docker image
-   docker build -t us-central1-docker.pkg.dev/YOUR_PROJECT_ID/app-registry/app:latest .
+# Set environment variables for sensitive values
+export TF_VAR_db_password="your-secure-database-password"
+export TF_VAR_api_key="your-api-key"
 
-   # Configure Docker for Artifact Registry
-   gcloud auth configure-docker us-central1-docker.pkg.dev
+# Initialize Terraform
+terraform init
 
-   # Push the image
-   docker push us-central1-docker.pkg.dev/YOUR_PROJECT_ID/app-registry/app:latest
-   ```
+# Validate the configuration
+terraform validate
 
-7. **Set up Cloud Build**
+# Plan the deployment
+terraform plan -out=tfplan
 
-   - Grant necessary permissions to the Cloud Build service account:
+# Apply the configuration
+terraform apply tfplan
+```
 
-     ```bash
-     # Get the Cloud Build service account email
-     PROJECT_ID=YOUR_PROJECT_ID
-     SERVICE_ACCOUNT=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')@cloudbuild.gserviceaccount.com
+### 7. Set up Cloud Build
 
-     # Grant the necessary role for GKE access
-     gcloud projects add-iam-policy-binding $PROJECT_ID \
-         --member=serviceAccount:$SERVICE_ACCOUNT \
-         --role=roles/container.developer
+```bash
+# Get the Cloud Build service account email
+PROJECT_ID=YOUR_PROJECT_ID
+SERVICE_ACCOUNT=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')@cloudbuild.gserviceaccount.com
 
-     # Grant artifact registry access
-     gcloud projects add-iam-policy-binding $PROJECT_ID \
-         --member=serviceAccount:$SERVICE_ACCOUNT \
-         --role=roles/artifactregistry.admin
+# Grant the necessary role for GKE access
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member=serviceAccount:$SERVICE_ACCOUNT \
+    --role=roles/container.developer
 
-     # Grant Secret Manager access
-     gcloud projects add-iam-policy-binding $PROJECT_ID \
-         --member=serviceAccount:$SERVICE_ACCOUNT \
-         --role=roles/secretmanager.secretAccessor
-     ```
+# Grant artifact registry access
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member=serviceAccount:$SERVICE_ACCOUNT \
+    --role=roles/artifactregistry.admin
 
-   - Trigger a Cloud Build pipeline:
+# Grant Secret Manager access
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member=serviceAccount:$SERVICE_ACCOUNT \
+    --role=roles/secretmanager.secretAccessor
 
-     ```bash
-     gcloud builds submit --config=cloudbuild.yaml \
-         --substitutions=_NAMESPACE=staging,_TAG=latest
-     ```
+# Trigger a Cloud Build pipeline
+gcloud builds submit --config=cloudbuild.yaml \
+    --substitutions=_NAMESPACE=staging,_TAG=staging
+```
 
-8. **Set up GitHub Actions**
+### 8. Set up GitHub Actions
 
-   - Create a GCP service account for GitHub Actions:
+```bash
+# Create a service account for GitHub Actions
+gcloud iam service-accounts create github-actions \
+    --display-name="GitHub Actions"
 
-     ```bash
-     # Create service account
-     gcloud iam service-accounts create github-actions \
-         --display-name="GitHub Actions"
+# Grant necessary permissions
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member="serviceAccount:github-actions@$PROJECT_ID.iam.gserviceaccount.com" \
+    --role="roles/container.developer"
 
-     # Assign necessary roles
-     gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
-         --member="serviceAccount:github-actions@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
-         --role="roles/container.developer"
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member="serviceAccount:github-actions@$PROJECT_ID.iam.gserviceaccount.com" \
+    --role="roles/artifactregistry.admin"
 
-     gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
-         --member="serviceAccount:github-actions@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
-         --role="roles/storage.admin"
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member="serviceAccount:github-actions@$PROJECT_ID.iam.gserviceaccount.com" \
+    --role="roles/secretmanager.secretAccessor"
 
-     gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
-         --member="serviceAccount:github-actions@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
-         --role="roles/artifactregistry.admin"
+# Create and download service account key
+gcloud iam service-accounts keys create github-actions-key.json \
+    --iam-account=github-actions@$PROJECT_ID.iam.gserviceaccount.com
 
-     # Create and download key
-     gcloud iam service-accounts keys create key.json \
-         --iam-account=github-actions@YOUR_PROJECT_ID.iam.gserviceaccount.com
-     ```
+# Base64 encode the key (for GitHub secrets)
+cat github-actions-key.json | base64 -w 0
+```
 
-   - Add the following secrets to your GitHub repository:
-     - `GCP_PROJECT_ID`: Your GCP project ID
-     - `GCP_SA_KEY`: The content of the downloaded `key.json` file (base64 encoded)
+Add the following secrets to your GitHub repository:
+- `GCP_PROJECT_ID`: Your GCP project ID
+- `GCP_SA_KEY`: The base64-encoded content of the github-actions-key.json file
 
-8. **Access the application and Kibana**
+### 9. Deploy to Production Environment
 
-   ```bash
-   # Get Ingress IP for the application in staging
-   kubectl -n staging get ingress app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+```bash
+cd ../production
 
-   # Get Ingress IP for the application in production
-   kubectl -n production get ingress app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+# Create terraform.tfvars file from example
+cp terraform.tfvars.example terraform.tfvars
 
-   # Get Ingress IP for Kibana
-   kubectl -n elk get ingress kibana -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
-   ```
+# Edit terraform.tfvars with your project-specific values
+vi terraform.tfvars
 
-   Access the applications in your browser:
-   - Application: `http://<ingress-ip>`
-   - Kibana: `http://<kibana-ingress-ip>:5601`
+# Use the same sensitive environment variables as before
+# Initialize Terraform
+terraform init
 
-## Testing the Application
+# Validate the configuration
+terraform validate
+
+# Plan the deployment
+terraform plan -out=tfplan
+
+# Apply the configuration
+terraform apply tfplan
+```
+
+### 10. Access the Deployed Resources
+
+```bash
+# Configure kubectl for the staging environment
+gcloud container clusters get-credentials staging-cache-gke-cluster --region us-central1 --project $PROJECT_ID
+
+# Get the application endpoint in staging
+kubectl -n staging get ingress app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+
+# Get Kibana endpoint in staging
+kubectl -n staging-elk get ingress kibana -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+
+# Switch to production environment
+gcloud container clusters get-credentials production-cache-gke-cluster --region us-central1 --project $PROJECT_ID
+
+# Get the application endpoint in production
+kubectl -n production get ingress app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+
+# Get Kibana endpoint in production
+kubectl -n production-elk get ingress kibana -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+```
+
+### 11. Testing the Application
 
 The application provides the following endpoints:
 
@@ -244,38 +345,71 @@ curl -X POST http://<app-ingress-ip>/api/events \
 curl http://<app-ingress-ip>/api/events
 ```
 
-## Local Development
+## Security Features
 
-For local development:
+This implementation includes several security best practices:
 
-```bash
-# Create a virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+1. **Network Segmentation**: Separate VPC networks for staging and production environments.
+2. **Secret Management**: Secure handling of credentials using Google Secret Manager.
+3. **Least Privilege**: IAM roles following the principle of least privilege.
+4. **Workload Identity**: Secure service account access without key files.
+5. **Private Cluster**: GKE clusters with private nodes.
+6. **Audit Logging**: Comprehensive logging for all components.
+7. **TLS**: Secure communication with TLS.
+8. **Container Security**: Non-root container execution.
+9. **Service Isolation**: Namespace separation for different environments.
 
-# Install dependencies
-pip install -r requirements.txt
+For more details, see [infra-docs.md](infra-docs.md).
 
-# Run the application
-python app.py
+## Cleaning Up
 
-# Run tests
-pytest
-```
-
-## Cleanup
-
-To clean up all resources:
+To avoid ongoing charges, clean up the resources when no longer needed:
 
 ```bash
-cd terraform
+# Destroy production environment
+cd terraform/environments/production
 terraform destroy
+
+# Destroy staging environment
+cd ../staging
+terraform destroy
+
+# Delete Artifact Registry repository
+gcloud artifacts repositories delete app-registry --location=us-central1
+
+# Delete the project (optional)
+gcloud projects delete YOUR_PROJECT_ID
 ```
 
-## Additional Documentation
+## Troubleshooting
 
-Refer to [infra-docs.md](infra-docs.md) for detailed information on:
-- IAM roles and policies
-- Secret management
-- Audit logging
-- SOC 2 compliance alignment
+### Common Issues
+
+1. **API not enabled**: Ensure all required APIs are enabled before applying Terraform.
+
+2. **Permission denied**: Verify that your account has the necessary permissions.
+
+3. **Secret not found**: Check that secrets exist in Secret Manager and are accessible by the service accounts.
+
+4. **Connection issues**: Verify network configuration and firewall rules.
+
+### Debugging
+
+1. **Check GKE pod logs**:
+   ```bash
+   kubectl -n <namespace> logs deployment/app
+   ```
+
+2. **Examine Cloud Build logs**:
+   ```bash
+   gcloud builds list
+   gcloud builds log <build-id>
+   ```
+
+3. **View Stackdriver logs**:
+   ```bash
+   gcloud logging read "resource.type=k8s_container AND resource.labels.namespace_name=<namespace> AND resource.labels.container_name=app"
+   ```
+
+4. **Access Kibana dashboard** for detailed application logs:
+   Open `http://<kibana-ingress-ip>:5601` in your browser
