@@ -1,0 +1,61 @@
+steps:
+  # Build the container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/app-registry/app:${_TAG}', '.']
+
+  # Push the container image to Google Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/app-registry/app:${_TAG}']
+
+  # Install dependencies for testing
+  - name: 'python:3.9'
+    entrypoint: pip
+    args: ['install', '-r', 'requirements.txt']
+
+  # Run tests
+  - name: 'python:3.9'
+    entrypoint: python
+    args: ['-m', 'pytest', '-v']
+
+  # Deploy to GKE
+  - name: 'gcr.io/cloud-builders/kubectl'
+    args:
+      - 'set'
+      - 'image'
+      - 'deployment/app'
+      - 'app=${_REGION}-docker.pkg.dev/${PROJECT_ID}/app-registry/app:${_TAG}'
+      - '--namespace=${_NAMESPACE}'
+    env:
+      - 'CLOUDSDK_COMPUTE_ZONE=${_ZONE}'
+      - 'CLOUDSDK_CONTAINER_CLUSTER=${_CLUSTER_NAME}'
+
+  # Get deployment status
+  - name: 'gcr.io/cloud-builders/kubectl'
+    args:
+      - 'rollout'
+      - 'status'
+      - 'deployment/app'
+      - '--namespace=${_NAMESPACE}'
+    env:
+      - 'CLOUDSDK_COMPUTE_ZONE=${_ZONE}'
+      - 'CLOUDSDK_CONTAINER_CLUSTER=${_CLUSTER_NAME}'
+
+# Store images in Google Artifact Registry
+images:
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/app-registry/app:${_TAG}'
+
+# Define default substitution variables
+substitutions:
+  _REGION: us-central1
+  _ZONE: us-central1
+  _CLUSTER_NAME: cache-gke-cluster
+  _NAMESPACE: staging
+  _TAG: latest
+
+# Configure timeout
+timeout: 1800s
+
+# Configure build options
+options:
+  machineType: 'E2_HIGHCPU_8'
+  logging: CLOUD_LOGGING_ONLY
