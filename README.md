@@ -1,4 +1,4 @@
-# Cache: DevOps Engineer Take-Home Assessment
+# Cache: DevOps Engineer Assessment
 
 This repository contains a secure, production-grade infrastructure setup on Google Cloud Platform (GCP) for a simple application that integrates with Pub/Sub, PostgreSQL, and ELK Stack, with CI/CD support via GitHub.
 
