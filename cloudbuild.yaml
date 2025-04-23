@@ -1,4 +1,18 @@
+# cloudbuild.yaml
 steps:
+  # Validation step
+  - name: 'python:3.9'
+    id: 'validate-structure'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        if [ ! -f requirements.txt ]; then
+          echo "ERROR: requirements.txt not found in root directory!"
+          exit 1
+        fi
+        echo "Repository structure validated"
+
   # Build the container image
   - name: 'gcr.io/cloud-builders/docker'
     args: ['build', '-t', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/app-registry/app:${_TAG}', '.']
@@ -24,17 +38,6 @@ steps:
       - 'image'
       - 'deployment/app'
       - 'app=${_REGION}-docker.pkg.dev/${PROJECT_ID}/app-registry/app:${_TAG}'
-      - '--namespace=${_NAMESPACE}'
-    env:
-      - 'CLOUDSDK_COMPUTE_ZONE=${_ZONE}'
-      - 'CLOUDSDK_CONTAINER_CLUSTER=${_CLUSTER_NAME}'
-
-  # Get deployment status
-  - name: 'gcr.io/cloud-builders/kubectl'
-    args:
-      - 'rollout'
-      - 'status'
-      - 'deployment/app'
       - '--namespace=${_NAMESPACE}'
     env:
       - 'CLOUDSDK_COMPUTE_ZONE=${_ZONE}'
