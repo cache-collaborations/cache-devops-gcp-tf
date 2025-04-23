@@ -1,0 +1,8 @@
+flask==2.0.1
+psycopg2-binary==2.9.1
+google-cloud-secret-manager==2.8.0
+google-cloud-pubsub==2.8.0
+requests==2.26.0
+gunicorn==20.1.0
+pytest==6.2.5
+pytest-cov==2.12.1
