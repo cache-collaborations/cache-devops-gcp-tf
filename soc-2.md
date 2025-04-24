@@ -1,77 +1,96 @@
 # SOC 2 Compliance Documentation
 
-This document outlines the measures implemented in our infrastructure to ensure SOC 2 compliance.
+## Overview
 
-## SOC 2 Trust Service Criteria Addressed
+This document outlines how our infrastructure implements controls to meet SOC 2 compliance requirements across all five Trust Services Criteria:
 
-### Security
-- **Network Security**: VPC isolation, private subnets, network policies
-- **Access Control**: IAM with least privilege, service account separation
-- **Encryption**: Data at rest and in transit encryption
-- **Audit Logging**: Comprehensive audit trail for all modifications
+1. Security
+2. Availability
+3. Processing Integrity
+4. Confidentiality
+5. Privacy
 
-### Availability
-- **Redundancy**: Multi-node GKE clusters, replicated databases
-- **Monitoring**: Alerting on critical metrics and logs
-- **Disaster Recovery**: Automated backups with retention policies
+## Security Controls
 
-### Processing Integrity
-- **CI/CD Verification**: Tests run before deployment
-- **Input Validation**: All API endpoints validated
-- **Change Management**: Infrastructure as code, peer reviews
+### Access Control
 
-### Confidentiality
-- **Data Classification**: Sensitive data identified and protected
-- **Secret Management**: Google Secret Manager with strict access controls
-- **Data Access**: Audit logs for all data access events
+- **Least Privilege**: All IAM roles follow the principle of least privilege, granting only permissions necessary for each function
+- **Service Account Separation**: Dedicated service accounts for different components (GKE, application, database, audit)
+- **Workload Identity**: Secure authentication without using service account keys
+- **Two-factor Authentication**: Required for all administrative access
 
-### Privacy
-- **Data Minimization**: Only necessary data collected
-- **Retention Policies**: Data stored only as long as necessary
+### Infrastructure Protection
 
-## Audit Logging Configuration
+- **Network Segmentation**: VPC with separate subnets for staging and production
+- **Private Clusters**: GKE clusters with private nodes accessible only through bastion
+- **Firewall Rules**: Restrictive firewall policies allowing only necessary traffic
+- **Encryption**: Data encrypted both at rest and in transit
 
-This infrastructure implements comprehensive audit logging:
+### Audit Logging
 
-1. **Admin Activity Logs**: All administrative changes (IAM, resource creation/deletion)
-2. **Data Access Logs**: All access to sensitive data
-3. **System Event Logs**: System-level events
-4. **Custom Metrics**: Security-focused metrics for IAM changes, network changes, etc.
+- **Comprehensive Coverage**: Logging of all administrative actions, data access, and system events
+- **Log Retention**: Audit logs retained for 365 days in compliant storage with encryption
+- **Log Integrity**: Immutable logs with controlled access
+- **Alerting**: Real-time alerts for suspicious activities
 
-## Access Control
+## Availability Controls
 
-1. **Service Account Segregation**:
-   - GKE Node Service Account: Minimal permissions for node operation
-   - Application Service Account: Limited to required app functions
-   - Monitoring Service Account: Isolated for monitoring functions
+- **Redundancy**: Application deployed with multiple replicas across multiple zones
+- **Automated Scaling**: HorizontalPodAutoscaler maintains performance during load changes
+- **Resilient Data Storage**: Cloud SQL with automatic backups and point-in-time recovery
+- **Monitoring**: Proactive monitoring of all system components with alerts
 
-2. **Workload Identity**: Secure authentication without using service account keys
+## Processing Integrity Controls
 
-3. **Custom Roles**: Principle of least privilege enforced through custom IAM roles
+- **CI/CD Pipelines**: Automated testing and deployment with proper validation
+- **Input Validation**: Application validates all inputs before processing
+- **Environment Separation**: Distinct staging and production environments
+- **Database Integrity**: Enforced through proper schema design and constraints
 
-## Monitoring and Alerting
+## Confidentiality Controls
 
-Real-time alerts configured for:
-- Unauthorized IAM changes
-- Network configuration changes
-- Authentication failures
-- Unusual data access patterns
+- **Data Classification**: All data classified according to sensitivity
+- **Encryption**: Sensitive data encrypted at rest and in transit
+- **Access Controls**: Only authorized services can access sensitive data
+- **Secret Management**: Secure handling of credentials via Secret Manager
 
-## Retention and Encryption
+## Privacy Controls
 
-- Audit logs retained for 90 days with automatic archiving
-- Customer data encrypted at rest using Cloud KMS keys
-- All data in transit encrypted using TLS 1.2+
+- **Data Minimization**: Only necessary data collected and stored
+- **Retention Policies**: Data only kept as long as necessary
+- **Access Limitations**: Access to personal data restricted to authorized services
+- **Data Processing Agreements**: Compliant agreements with all service providers
+
+## Audit and Compliance Monitoring
+
+Our infrastructure includes automated compliance monitoring:
+
+1. **Security Dashboard**: Real-time visibility into security metrics
+2. **Audit Log Analysis**: Regular review of audit logs for suspicious activity
+3. **Alert Policies**: Immediate notification of potential compliance issues
+4. **Regular Testing**: Automated scans and penetration testing
 
 ## Incident Response
 
-Automated notifications to the security team for critical events via:
-- Email alerts
-- Slack notifications
-- PagerDuty escalations
+Procedures are in place for responding to security incidents:
 
-## Compliance Testing
+1. **Detection**: Automated detection through monitoring and alerts
+2. **Containment**: Procedures to quickly isolate affected systems
+3. **Eradication**: Process for removing threats from the environment
+4. **Recovery**: Steps to restore systems securely
+5. **Post-incident Analysis**: Review and improvement process
 
-- Regular security scans using Google Security Command Center
-- Penetration testing performed quarterly
-- Compliance verification using automated checks
+## Compliance Mapping
+
+| SOC 2 Criteria | Implementation | Monitoring |
+|----------------|----------------|------------|
+| CC1.1 - Commitment to Integrity | IAM policies, Audit logs | IAM change alerts |
+| CC1.2 - Board Oversight | Compliance documentation, Access control | Dashboard reviews |
+| CC2.1 - Information Security Policies | Network isolation, Encryption | Firewall rule monitoring |
+| CC3.1 - Risk Assessment | Regular scanning, Penetration testing | Vulnerability alerts |
+| CC4.1 - Process Monitoring | Audit logging, Metrics | Log analysis |
+| CC5.1 - Access Control | IAM, Workload Identity | Authentication failure alerts |
+| CC6.1 - Logical Access | Least privilege, Multi-factor auth | Access reviews |
+| CC7.1 - System Operations | Monitoring, Alerting | Performance dashboards |
+| CC8.1 - Change Management | CI/CD pipelines, Testing | Deployment monitoring |
+| CC9.1 - Risk Mitigation | Network security, Encryption | Threat detection |
