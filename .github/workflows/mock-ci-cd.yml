@@ -1,0 +1,255 @@
+# mock ci-cd to simulate workflow
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+env:
+  PROJECT_ID: demo-project-id
+  GKE_CLUSTER: cache-gke-cluster
+  GKE_ZONE: us-central1
+  REGISTRY: us-central1-docker.pkg.dev
+  REPOSITORY: app-registry
+  IMAGE: app
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          cache: 'pip'
+
+      - name: Verify requirements.txt exists
+        run: |
+          ls -la
+          if [ ! -f requirements.txt ]; then
+            echo "ERROR: requirements.txt not found in root directory!"
+            exit 1
+          fi
+
+      - name: Create mock credentials for testing
+        run: |
+          mkdir -p ~/.config/gcloud
+          echo '{"type":"authorized_user","client_id":"dummy","client_secret":"dummy","refresh_token":"dummy"}' > ~/.config/gcloud/application_default_credentials.json
+          
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Set up test environment
+        run: |
+            # Create conftest.py in app directory
+            cat > app/conftest.py << 'EOF'
+            import pytest
+            from unittest.mock import MagicMock, patch
+            import sys
+            
+            # Mock the entire Google Cloud modules
+            sys.modules['google.auth'] = MagicMock()
+            sys.modules['google.auth.default'] = MagicMock()
+            sys.modules['google.cloud'] = MagicMock()
+            sys.modules['google.cloud.secretmanager'] = MagicMock()
+            sys.modules['google.cloud.pubsub_v1'] = MagicMock()
+            
+            # Mock default credentials
+            mock_creds = MagicMock()
+            mock_creds.default.return_value = (MagicMock(), "test-project")
+            sys.modules['google.auth'] = mock_creds
+            
+            @pytest.fixture(autouse=True)
+            def mock_env_vars(monkeypatch):
+                """Mock environment variables for all tests."""
+                monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-project")
+                monkeypatch.setenv("TESTING", "true")
+            EOF
+            
+            # Run tests
+            cd app
+            python -m pytest -xvs
+
+  build-and-deploy-staging:
+    name: Build and Deploy to Staging
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Simulate GCP authentication
+        run: |
+          echo "Simulating GCP authentication..."
+          echo "In a real environment, this would authenticate with GCP"
+          # Create mock directories and files to simulate GCP CLI
+          mkdir -p $HOME/gcloud/bin
+          echo '#!/bin/bash
+          echo "Simulated gcloud command: $@"
+          if [[ "$1" == "container" && "$2" == "clusters" && "$3" == "get-credentials" ]]; then
+            mkdir -p $HOME/.kube
+            echo "apiVersion: v1
+          kind: Config
+          clusters:
+          - name: ${{ env.GKE_CLUSTER }}
+            cluster:
+              server: https://example.com
+          " > $HOME/.kube/config
+          fi
+          if [[ "$1" == "auth" && "$2" == "configure-docker" ]]; then
+            echo "Docker configured for $3"
+          fi
+          ' > $HOME/gcloud/bin/gcloud
+          chmod +x $HOME/gcloud/bin/gcloud
+          export PATH=$HOME/gcloud/bin:$PATH
+          echo "PATH=$PATH" >> $GITHUB_ENV
+          
+          # Create mock kubectl
+          echo '#!/bin/bash
+          echo "Simulated kubectl command: $@"
+          if [[ "$1" == "create" && "$2" == "namespace" ]]; then
+            echo "namespace/$3 created"
+          fi
+          if [[ "$1" == "apply" && "$2" == "-f" && "$3" == "-" ]]; then
+            echo "resource created from stdin"
+          fi
+          if [[ "$1" == "rollout" && "$2" == "status" ]]; then
+            echo "deployment/$4 successfully rolled out"
+          fi
+          ' > $HOME/gcloud/bin/kubectl
+          chmod +x $HOME/gcloud/bin/kubectl
+
+      - name: Simulate Docker build and push
+        run: |
+          echo "Simulating Docker build and push..."
+          echo "In a real environment, this would build and push a Docker image"
+          echo "Built image: ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:staging"
+
+      - name: Simulate deployment to staging
+        run: |
+          echo "Simulating deployment to Kubernetes..."
+          # Ensure simulated kubectl is in PATH
+          export PATH=$HOME/gcloud/bin:$PATH
+          
+          # Create namespace
+          kubectl create namespace staging
+          
+          # Deploy application
+          cat <<EOF | kubectl apply -f -
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: app
+            namespace: staging
+          spec:
+            replicas: 4
+            selector:
+              matchLabels:
+                app: app
+            template:
+              metadata:
+                labels:
+                  app: app
+              spec:
+                containers:
+                - name: app
+                  image: ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:staging
+                  ports:
+                  - containerPort: 8080
+          EOF
+          
+          # Create service
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: app
+            namespace: staging
+          spec:
+            selector:
+              app: app
+            ports:
+            - port: 80
+              targetPort: 8080
+          EOF
+          
+          # Verify deployment
+          kubectl -n staging rollout status deployment/app
+
+  promote-to-production:
+    name: Promote to Production
+    needs: build-and-deploy-staging
+    runs-on: ubuntu-latest
+    steps:
+      - name: Simulate promotion to production
+        run: |
+          echo "Simulating promotion to production..."
+          # Create mock directories and files to simulate GCP CLI
+          mkdir -p $HOME/gcloud/bin
+          echo '#!/bin/bash
+          echo "Simulated gcloud command: $@"
+          if [[ "$1" == "artifacts" && "$2" == "docker" && "$3" == "tags" && "$4" == "add" ]]; then
+            echo "Tagged $5 as $7"
+          fi
+          ' > $HOME/gcloud/bin/gcloud
+          chmod +x $HOME/gcloud/bin/gcloud
+          export PATH=$HOME/gcloud/bin:$PATH
+          
+          # Create mock kubectl
+          echo '#!/bin/bash
+          echo "Simulated kubectl command: $@"
+          if [[ "$1" == "create" && "$2" == "namespace" ]]; then
+            echo "namespace/$3 created"
+          fi
+          if [[ "$1" == "apply" && "$2" == "-f" && "$3" == "-" ]]; then
+            echo "resource created from stdin"
+          fi
+          if [[ "$1" == "rollout" && "$2" == "status" ]]; then
+            echo "deployment/$4 successfully rolled out"
+          fi
+          ' > $HOME/gcloud/bin/kubectl
+          chmod +x $HOME/gcloud/bin/kubectl
+          
+          # Tag image for production
+          gcloud artifacts docker tags add \
+            ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:staging \
+            ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:production
+          
+          # Deploy to production
+          kubectl create namespace production
+          
+          cat <<EOF | kubectl apply -f -
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: app
+            namespace: production
+          spec:
+            replicas: 4
+            selector:
+              matchLabels:
+                app: app
+            template:
+              metadata:
+                labels:
+                  app: app
+              spec:
+                containers:
+                - name: app
+                  image: ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:production
+                  ports:
+                  - containerPort: 8080
+          EOF
+          
+          kubectl -n production rollout status deployment/app
+          
+          echo "Production deployment complete! This is a simulation."
