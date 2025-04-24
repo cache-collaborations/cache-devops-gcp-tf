@@ -59,6 +59,8 @@ module "kubernetes" {
   node_count       = 4
   machine_type     = "e2-standard-2"
   node_preemptible = false
+  gke_service_account_email = module.iam.gke_service_account_email
+  app_service_account_email = module.iam.app_service_account_email
 
   depends_on = [module.networking]
 }
@@ -86,6 +88,23 @@ module "logging" {
 
   depends_on = [module.kubernetes]
 }
+
+module "iam" {
+  source = "../../modules/iam"
+  
+  project_id  = var.project_id
+  environment = local.environment
+}
+
+module "audit" {
+  source = "../../modules/audit"
+  
+  project_id     = var.project_id
+  environment    = local.environment
+  region         = var.region
+  security_email = var.security_email
+}
+
 
 # Deploy application Kubernetes resources
 resource "kubernetes_namespace" "app" {
