@@ -4,14 +4,20 @@ variable "project_id" {
   type        = string
 }
 
+variable "region" {
+  description = "The GCP region"
+  type        = string
+}
+
 variable "environment" {
   description = "Environment (staging or production)"
   type        = string
 }
 
-variable "region" {
-  description = "The GCP region"
+variable "prefix" {
+  description = "Prefix for resource names"
   type        = string
+  default     = "cache"
 }
 
 variable "security_email" {
