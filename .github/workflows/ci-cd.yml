@@ -42,29 +42,36 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run tests
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/mock-credentials.json
-          GOOGLE_CLOUD_PROJECT: test-project
-          PYTHONPATH: ${{ github.workspace }}
+      - name: Set up test environment
         run: |
-          # Create a mock credentials file
-          echo '{
-            "type": "service_account",
-            "project_id": "test-project",
-            "private_key_id": "mock-key-id",
-            "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC7VJTUt9Us8cKj\nMzEfYyjiWA4R4/M2bS1GB4t7NXp98C3SC6dVMvDuictGeurT8jNbvJZHtCSuYEvu\nNMoSfm76oqFvAp8Gy0iz5sxjZmSnXyCdPEovGhLa0VzMaQ8s+CLOyS56YyCFGeJZ\nmAbLre/ARnCwXw7gfnCNNSs=\n-----END PRIVATE KEY-----\n",
-            "client_email": "mock@test-project.iam.gserviceaccount.com",
-            "client_id": "000000000000000000000",
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/mock%40test-project.iam.gserviceaccount.com"
-          }' > mock-credentials.json
+          # Create conftest.py in app directory
+          cat > app/conftest.py << 'EOF'
+          import pytest
+          from unittest.mock import MagicMock, patch
+          import sys
           
-          # Run the tests
+          # Mock the entire Google Cloud modules
+          sys.modules['google.auth'] = MagicMock()
+          sys.modules['google.auth.default'] = MagicMock()
+          sys.modules['google.cloud'] = MagicMock()
+          sys.modules['google.cloud.secretmanager'] = MagicMock()
+          sys.modules['google.cloud.pubsub_v1'] = MagicMock()
+          
+          # Mock default credentials
+          mock_creds = MagicMock()
+          mock_creds.default.return_value = (MagicMock(), "test-project")
+          sys.modules['google.auth'] = mock_creds
+          
+          @pytest.fixture(autouse=True)
+          def mock_env_vars(monkeypatch):
+              """Mock environment variables for all tests."""
+              monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-project")
+              monkeypatch.setenv("TESTING", "true")
+          EOF
+          
+          # Run tests
           cd app
-          python -m pytest
+          python -m pytest -xvs
 
   build-and-deploy-staging:
     name: Build and Deploy to Staging
