@@ -94,14 +94,16 @@ module "iam" {
   
   project_id  = var.project_id
   environment = local.environment
+  prefix      = var.project_prefix
 }
 
 module "audit" {
   source = "../../modules/audit"
   
   project_id     = var.project_id
-  environment    = local.environment
   region         = var.region
+  environment    = local.environment
+  prefix         = var.project_prefix
   security_email = var.security_email
 }
 
