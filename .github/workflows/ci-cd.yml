@@ -82,6 +82,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Auth with GCP
+        id: auth
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          project_id: ${{ env.PROJECT_ID }}
+          
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v1
         with:
@@ -101,7 +108,7 @@ jobs:
 
       - name: Configure Docker for Google Artifact Registry
         run: |
-          gcloud auth configure-docker ${{ env.REGISTRY }}
+          gcloud auth configure-docker ${{ env.REGISTRY }} --quiet
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
@@ -111,12 +118,64 @@ jobs:
           tags: ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:staging
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          build-args: |
-            APP_VERSION=${{ github.sha }}
 
       - name: Deploy to Staging
         run: |
-          kubectl -n staging set image deployment/app app=${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:staging
+          # Ensure namespace exists
+          kubectl create namespace staging --dry-run=client -o yaml | kubectl apply -f -
+          
+          # Apply deployment
+          cat <<EOF | kubectl apply -f -
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: app
+            namespace: staging
+          spec:
+            replicas: 4
+            selector:
+              matchLabels:
+                app: app
+            template:
+              metadata:
+                labels:
+                  app: app
+              spec:
+                containers:
+                - name: app
+                  image: ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:staging
+                  ports:
+                  - containerPort: 8080
+                  livenessProbe:
+                    httpGet:
+                      path: /health
+                      port: 8080
+                    initialDelaySeconds: 30
+                    periodSeconds: 10
+                  readinessProbe:
+                    httpGet:
+                      path: /health
+                      port: 8080
+                    initialDelaySeconds: 5
+                    periodSeconds: 5
+          EOF
+          
+          # Ensure service exists
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: app
+            namespace: staging
+          spec:
+            selector:
+              app: app
+            ports:
+            - port: 80
+              targetPort: 8080
+            type: ClusterIP
+          EOF
+          
           kubectl -n staging rollout status deployment/app
 
   promote-to-production:
@@ -125,8 +184,14 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: ${{ steps.get-url.outputs.url }}
     steps:
+      - name: Auth with GCP
+        id: auth
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          project_id: ${{ env.PROJECT_ID }}
+
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v1
         with:
@@ -139,23 +204,71 @@ jobs:
         with:
           cluster_name: ${{ env.GKE_CLUSTER }}
           location: ${{ env.GKE_ZONE }}
-
-      - name: Configure Docker for Google Artifact Registry
-        run: |
-          gcloud auth configure-docker ${{ env.REGISTRY }}
+          project_id: ${{ env.PROJECT_ID }}
 
       - name: Tag staging image as production
         run: |
           gcloud artifacts docker tags add \
             ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:staging \
             ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:production
-          gcloud artifacts docker tags add \
-            ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:staging \
-            ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ github.sha }}
 
       - name: Deploy to Production
         run: |
-          kubectl -n production set image deployment/app app=${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:production
+          # Ensure namespace exists
+          kubectl create namespace production --dry-run=client -o yaml | kubectl apply -f -
+          
+          # Apply deployment
+          cat <<EOF | kubectl apply -f -
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: app
+            namespace: production
+          spec:
+            replicas: 4
+            selector:
+              matchLabels:
+                app: app
+            template:
+              metadata:
+                labels:
+                  app: app
+              spec:
+                containers:
+                - name: app
+                  image: ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:production
+                  ports:
+                  - containerPort: 8080
+                  livenessProbe:
+                    httpGet:
+                      path: /health
+                      port: 8080
+                    initialDelaySeconds: 30
+                    periodSeconds: 10
+                  readinessProbe:
+                    httpGet:
+                      path: /health
+                      port: 8080
+                    initialDelaySeconds: 5
+                    periodSeconds: 5
+          EOF
+          
+          # Ensure service exists
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: app
+            namespace: production
+          spec:
+            selector:
+              app: app
+            ports:
+            - port: 80
+              targetPort: 8080
+            type: ClusterIP
+          EOF
+          
           kubectl -n production rollout status deployment/app
 
       - name: Get Service URL
