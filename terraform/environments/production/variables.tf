@@ -39,3 +39,9 @@ variable "bastion_allowed_cidr" {
   type        = string
   default     = "0.0.0.0/0"  # Should be restricted to specific IPs in production
 }
+
+variable "security_email" {
+  description = "Email address for security alerts"
+  type        = string
+  default     = "security@example.com"
+}
